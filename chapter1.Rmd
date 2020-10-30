@@ -1,13 +1,8 @@
 
-# About the project
+# 1: Open Data Science: Introduction
 
-*Write a short description about the course and add a link to your GitHub repository here. This is an R Markdown (.Rmd) file so you should use R Markdown syntax.*
+My name is Jonathan, and I am a first-year PhD student at the Department of Forest Sciences at UH within the doctoral programme in atmospheric sciences. I am developing disturbance modules (windthrows, snow breakage etc.) for a forest growth model. I have been working a lot with R and RStudio in the last years, and am taking my first steps with Github. I am a big fan of the idea of open research and data (partially probably because I depend on them), so this course should be my cup of tea, but I also would like to get a few hints on best practices on R and Github workflows, as my approach until now has been largely learning-by-doing/trial-and-error, and I am sure I could do things a lot more efficiently and transparently (also for my future self). In addition, the later parts of the course pertaining dimensionality reduction and classification approaches will hopefully help me to make more of sense of and analyse the large datasets I base the disturbance modelling on.
 
-```{r}
-# This is a so-called "R chunk" where you can write R code.
 
-date()
-
-```
-The text continues here.
-
+You can find my version of the IODS repository here:
+[My IODS on Github](https://github.com/jonathanholder/IODS-project)
