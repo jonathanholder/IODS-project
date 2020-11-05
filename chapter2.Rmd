@@ -1,13 +1,112 @@
-# Insert chapter 2 title here
+# 2: Exercise 2: Analysis / linear regression
 
-*Describe the work you have done this week and summarize your learning.*
+(The data wrangling script can be found [here](https://github.com/jonathanholder/IODS-project/blob/master/create_learning2014.R))
 
-- Describe your work and results clearly. 
-- Assume the reader has an introductory course level understanding of writing and reading R code as well as statistical methods.
-- Assume the reader has no previous knowledge of your data or the more advanced methods you are using.
+## 1: Reading data & short description
+
+The data was collected in a survey of students' learning attitudes in a introductory course to statistics at the University of Helsinki in 2014 and 2015. Questions have been aggregated into three dimensions/combination categories (deep, surface, and strategic learning), and the students' answers to individual questions have been averaged within those categories (Likert scale, 1 = strongly disagree, 5 = strongly agree). Additional background variables for students are age, attitude ('Global attitude toward statistics'), gender, and exam points (students with an exam score of 0 have been excluded).
+The data set contains 166 observations/students of the above-mentioned 7 variables.
 
 ```{r}
-date()
+l14 <- read.csv("data/learning2014.csv")
+str(l14)
+dim(l14)
+head(l14)
 ```
 
-Here we go again...
+## 2: Data overview
+
+First a glance at the ranges of the variables (top two lines), and the corresponding means (bottom line):
+```{r, echo=F}
+sapply(l14[,-4], range)
+sapply(l14[,-4], mean)
+```
+On average, the statements subsumed under surface learning scored the lowest levels of agreement, while the deep learning statements show the highest levels of agreement, with the strategic learning statements in between.
+
+About twice as many females as males participated in the survey. 
+```{r, echo=F}
+table(l14$gender)
+```
+
+
+In the following combination plots, the correlations between all variables are depicted:
+
+
+```{r fig.width=12, fig.height=12, echo=F, message=F }
+library(GGally)
+library(ggplot2)
+p_expl.l14 <- ggpairs(l14, mapping = aes(col=gender, alpha=0.3), lower = list(combo = wrap("facethist", bins = 20)))
+p_expl.l14
+```
+
+I won't go through all combinations, but limit myself to the most interesting ones. 
+
+*   The clearest correlation exists between the variables attitude and points, i.e. a higher score in attitude seems to be significantly positively correlated with the number of points achieved.
+*   A high score in deep learning seems to be negatively correlated with the score in surface learning, but this seems to be true only for males.
+*   The same is true for the correlation between surface learning and attitude (significant only amongst males)
+*   There seem to be relatively more female respondents with a lower score in attitude.
+
+
+## 3: Regression model
+
+As the simple linear correlation between the respondents' learning attitude scores (deep/surface/strategic) and the exam score seems to be low, I will have a closer look at the background information variables (age, gender, attitude) and their correlation with the the exam score here. 
+
+```{r}
+lmod1 <- lm(Points ~ Attitude + gender + Age, data=l14)
+summary(lmod1)
+```
+According to the model summary, only the attitude variable has a significant (positive) effect on the number of points achieved, with a p value well below the traditional significance threshold of 0.05. Male and older participants may have performed slightly worse, but these correlations are not significant according to the t-statistic applied here, i.e. the null hyphotheses that there is no relationship between gender and age and point score, respectively, should be accepted here. 
+Accordingly, gender and age as explanatory variables are dropped from the model from here on.
+
+Note that these judgements on the significance of the explanatory power of the variables are only valid for linear relationships here. 
+
+
+## 4: Analysing the model
+This reduction results in a simple linear model with only one predictor for exam points, namely attitude.
+
+```{r}
+lmod2 <- lm(Points ~ Attitude, data=l14)
+summary(lmod2)
+```
+The resulting linear model predicts an intercept of 11.6, i.e. a student with a (hypothetical) attitude score of 0 would be predicted to score about 12 points in the exam. The estimate of the $\beta 1$ parameter of 0.35 means that for each additional score point in attitude, the predicted exam point score increases by 0.35.
+Note that this very simple model can only predict exam point scores between roughly 16.5 and 29 based on the range of attitude values in the data (14 to 50) with the estimated relationship of
+
+$points = 11.6 + 0.35*attitude$ 
+
+
+The 'multiple' $R^2$ of the model is about 0.19, meaning that it is able to explain about 19% of the total variation of the response variable. Note that the 'multiple' $R^2$ does not really make sense here, as it sums up the proportions of variance explained by each predictor of the linear model. In the case of this simple model, there is just one predictor, so multiple $R^2$ = $R^2$.
+
+## 5: Graphical model validation
+
+In order to validate the applicability of this model, it is important to check in how far the model assumptions are met, here by graphically analysing the residuals.
+
+### 1. Are the errors normally distributed?
+
+To answer this, let's have a look at the model's QQ-plot. If the errors are normally distributed, the standardised residuals and the theoretical quantiles should follow approximately a 1:1 relationship (dashed line in the plot). 
+
+```{r, echo=F}
+plot(lmod2, which=2)
+```
+
+Even though there are deviations at the higher and lower ends, I would still say that the normality assumption is met here, as the deviations are rather minor, and the vast majority of the observations follow the 1:1 relationship very neatly. In case I wanted to publish something relying on this assumption, I would still check with somebody with a little more experience in model validation.
+
+
+### 2. Do the errors have a constant variance, i.e. does the size of the error not change with the explanatory variable?
+
+This can be checked with a scatterplot of residuals vs predicted values; it should not depict any clear trend or pattern.
+```{r, echo=F}
+plot(lmod2, which=1)
+```
+
+The residuals vs predicted values plot for the model here does not show a clear pattern; there is a little reduction in variance at the higher end of the fitted values, but there are also very few data points in this range. I would conclude that the assumption of a constant variance should be warranted here.
+
+
+### 3. Do individual observations heavily influence the model parameters / have high leverage?
+
+To check if individual data points have a big influence on the predictions, Cook's distance is helpful; high values indicate the influence of individual data points.
+
+```{r, echo=F}
+plot(lmod2, which=5)
+```
+In this case, the influence of individual data points can be considered very low. Generally, Cook's distance values of 0.5 or 1 should be investigated (well above the maximum Cook's distance in this instance).
+
