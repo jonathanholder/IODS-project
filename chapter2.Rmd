@@ -1,6 +1,6 @@
 # 2: Exercise 2: Analysis / linear regression
 
-(The data wrangling script can be found [here](https://github.com/jonathanholder/IODS-project/blob/master/create_learning2014.R))
+(The data wrangling script can be found [here](https://github.com/jonathanholder/IODS-project/blob/master/data/create_learning2014.R))
 
 ## 1: Reading data & short description
 
