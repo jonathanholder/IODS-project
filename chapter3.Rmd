@@ -1,0 +1,183 @@
+# Exercise 3: Logistic regression: analysis
+
+```{r, message=F}
+library(dplyr)
+library(ggplot2)
+```
+
+(The data wrangling script can be found [here](https://github.com/jonathanholder/IODS-project/blob/master/data/create_alc.R))
+
+## 1: Creating this file
+
+## 2: Reading data & short description
+
+[metadata source](https://archive.ics.uci.edu/ml/datasets/Student+Performance)
+
+
+'This data approach[es] student achievement in secondary education of two Portuguese schools. The data attributes include student grades, demographic, social and school related features) and it was collected by using school reports and questionnaires. Two datasets are provided regarding the performance in two distinct subjects: Mathematics (mat) and Portuguese language (por).'
+
+The data has been pre-processed, and is here used to analyse the student's alcohol consumption (one of the 'social features', probably) and a binary variable $high_use denotes high alcohol usage (>2 averaged over weekend and workday consumption, scale: 1 (very low) - 5 (very high)).
+
+Below you find an overview over the variables in the data, and a few sample observations. Overall, there are 382 observations/students of 38 variables (for more information on the individual variables, see metadata link above):
+
+```{r}
+alc <- read.csv("http://s3.amazonaws.com/assets.datacamp.com/production/course_2218/datasets/alc.txt", sep=",", header=T)
+str(alc)
+dim(alc)
+head(alc)
+```
+
+## 3: 4 variables, 4 hypotheses
+
+H 1. Common assumption that males drink more than females ($sex)  
+H 2. Learning interferes with drinking (or vice versa; high use positively correlated with $failures)     
+H 3. Hangovers reduce attendance (high use positively correlated with $absences)  
+H 4. When in a relationship, heavy drinking is of less interest (high use positively correlated with $romantic == no)  
+
+
+### H 1: Common assumption that males drink more than females ($sex)  
+At a first glance, H1 seems to be supported by the data: while there are about four times as many females with low alcohol consumption as there are females with high consumption, there are less than twice as many males with low alcohol consumption compared to high consumption (see table below). The average absolute alcohol use (based on the alc_use variable) is also higher among males.
+
+
+```{r, echo=F}
+table("Sex"=alc$sex, "High use"=alc$high_use)
+print(paste0("Average alcohol use: F: ", round(mean(alc$alc_use[alc$sex=="F"]), 2), ", M: ", round(mean(alc$alc_use[alc$sex=="M"]), 2)))
+ggplot(data=alc, aes(x=high_use, fill=sex))+geom_bar()+facet_wrap("sex")
+```
+
+### H 2. Learning interferes with drinking (or vice versa; high use positively correlated with $failures)
+
+H2 seems to be supported as well; while amongst students who have not failed any courses, about a quarter indicate high alcohol consumption, about half of the students with 2 or 3 failed courses indicate high consumption.
+```{r, echo=F}
+table("failures"=alc$failures, "High use"=alc$high_use)
+ggplot(data=alc, aes(x=failures, fill=high_use))+geom_bar()#+facet_wrap("high_use")
+```
+
+### H 3. Hangovers reduce attendance (high use positively correlated with $absences)
+
+H3 seems to be supported as well; on average, students with high alcohol consumption have about 1.8 more absences (~40%) than those with low consumption.
+
+```{r, echo=F}
+print(paste0("Average absences: low use: ", round(mean(alc$absences[alc$high_use==F]), 2), ", high use: ", round(mean(alc$absences[alc$high_use==T], 2))))
+ggplot(data=alc, aes(x=high_use, y=absences))+geom_boxplot()
+```
+
+
+The difference also becomes clear when looking at the histograms of absences for high and low alcohol usage separately; in the case of high usage (top), the tail is heavier than in that of lower usage (bottom):
+
+
+```{r, echo=F}
+
+hist(alc$absences[alc$high_use==T], breaks=c(seq(0, 80, 5)))
+hist(alc$absences[alc$high_use==F], breaks=c(seq(0, 80, 5)))
+
+?hist
+```
+
+### H 4. When in a relationship, heavy drinking is of less interest (high use positively correlated with $romantic == "no")
+
+H4 does not seem to be strongly supported by the data, as the in between alcohol usage between those in and without a relationship do not differ greatly (in relationship: ~30% high usage, not in a relationship: ~27%)
+
+```{r, echo=F}
+table("In a relationship"=alc$romantic, "High use"=alc$high_use)
+ggplot(data=alc, aes(x=romantic, fill=sex))+geom_bar()+facet_wrap("high_use")+ ggtitle("high_use == ")
+```
+
+
+
+## 5: Logistic regression model
+
+Below you find the summary for a logistic regression model of high alcohol usage with sex, absences, failures, and being in a romantic relationship as predictors:
+```{r, echo=F}
+m1 <- glm(high_use ~ sex + absences + failures + romantic, data = alc, family = "binomial")
+summary(m1)
+```
+
+As already suspected at a first glance at the data distribution, male sex, absences and failures are positively and significantly correlated with high alcohol consumption, confirming H1, H2 and H3. H4 is not supported by the model, as being in a relationship does not correlate significantly with high consumption.
+
+
+```{r, echo = F, message = F}
+OR <- coef(m1) %>% exp
+CI <- exp(confint(m1))
+cbind(OR, CI)
+
+```
+
+When looking at the odds ratios of the model coefficients, the following can be derived:  
+Sex: being male increases the odds to exhibit high use by 2.7 compared to females  
+Absences: each absence increases the likelyhood to exhibit high use by 0.08  
+Failures: each failed course increases the likelyhood to exhibit high use by 0.51  
+Romantic: being in a relationship decreases the likelyhood to exhibit high use by 0.25 (though this correlation is insignificant)  
+
+The confidence intervals: are widest for the the sex variable, so its effect (in absolute terms1) is the most uncertain.
+  
+The only predictor with a 95% confidence interval that includes 1 is that of being in a relationship. In practice, this means that it is unclear if the predictor has a positive (odds ratio >1) or negative (odds ratio <1) correlation with the target variable high_use - in other words, the predictor is not significantly correlated with high_use (see model summary).
+
+
+
+## 6: Predictive power of the model
+
+To analyse the predicitve power of the model, only the predictor variables with significant correlation with high alcohol usage were used, i.e. high_use ~ sex + absences + failure (the instructions about dropping insignificantpredictors were a bit unclear to me).
+Below you find a summary of the model (largely equivalent to m1):
+```{r, echo=F}
+m2 <- glm(high_use ~ sex + absences + failures, data = alc, family = "binomial")
+summary(m2)
+```
+ This model was then used to predict high_use (input: training data/whole data set); here's are two tables cross tables of predicted and observed high_use (top: N, bottom: proportions)
+
+
+```{r, echo=F}
+alc$hu_prob <- predict(m2, type = "response")
+alc$hu_pred <- ifelse(alc$hu_prob>0.5, TRUE, FALSE)
+table(prediction = alc$hu_pred, observation = alc$high_use) %>% addmargins
+table(prediction = alc$hu_pred, observation = alc$high_use) %>% prop.table %>% addmargins
+```
+
+Here, it becomes clear that the model is rather conservative in predicting high alcohol usage, predicting only 10% of the students falling within this definition (data: 29%), correspondingly producing relatively more false negatives (3%) than false positives (23%). The training error can be calculated as
+
+training error = false positives (0.031) + false negatives (0.225) = 0.256
+
+... this is confirmed by the loss function provided in the course:
+
+```{r}
+# define a loss function (mean prediction error)
+loss_func <- function(class, prob) {
+  n_wrong <- abs(class - prob) > 0.5
+  mean(n_wrong)
+}
+
+loss_func(class = alc$high_use, prob = alc$hu_prob)
+
+```
+
+The higher prevalence of false negatives becomes also clear from a scatterplot (false negatives: red points on upper line, false positives; cyan points on the lower line):
+
+```{r, echo=F}
+p <- ggplot(alc, aes(x = hu_prob, y = high_use, col=hu_pred))+geom_point()
+p
+```
+
+A simple guessing scheme to 'predict' high alcohol use can be formulated as 
+
+```{r}
+set.seed(1)
+alc$hu_guess <- sample(x=c(rep(FALSE, 270), rep(TRUE, 112)), size=nrow(alc), replace=T)
+```
+
+i.e. the probability of assigning high usage to a student is based on the prevalence of high usage in the data. This simple guessing strategy's 'predictive power' can be assessed in the same way as the above model:
+
+```{r}
+table(guess = alc$hu_guess, observation = alc$high_use) %>% prop.table %>% addmargins
+loss_func(class = alc$high_use, prob = alc$hu_guess)
+
+```
+
+training error = false positives 0.225 + false negatives 0.186 = 0.411
+
+The overall predictive power of the model seems therefore superior to bare guessing.
+
+An interesting closing remark: Note that guessing in fact predicts high usage correctly more often (~11%) than the model (~7%) (!).
+
+
+
+
