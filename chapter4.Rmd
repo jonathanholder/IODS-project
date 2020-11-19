@@ -1,0 +1,261 @@
+# Exercise 4: LDA
+
+```{r, message=F}
+library(MASS)
+library(dplyr)
+library(ggplot2)
+library(corrplot)
+library(knitr)
+```
+
+(The data wrangling script for next week can be found [here](https://github.com/jonathanholder/IODS-project/blob/master/data/create_human.R))
+
+## 1: Creating this file
+
+## 2: Reading data & short description
+
+[metadata source 1](https://stat.ethz.ch/R-manual/R-devel/library/MASS/html/Boston.html)  
+
+[metadata source 2](https://www.cs.toronto.edu/~delve/data/boston/bostonDetail.html)
+
+
+The *Boston* dataset consists of census data on various factors, mostly pertaining social and infrastructure, but also nitric oxide concentration for suburbs of Boston.
+Below you find an overview over the variables in the data, and a few sample observations. Overall, there are 506 observations (I suspect these correspond to some sort of administrative districts/segments) of 14 variables (for more information on the individual variables, see metadata links above):
+
+```{r}
+data("Boston")
+str(Boston)
+dim(Boston)
+head(Boston)
+```
+
+## 3: (Graphical) overview over data
+
+Below you find summaries of the variables as well as pairwise scatterplots for all variable combinations; I won't go through all of them, but pick a few interesting ones.
+```{r fig.width=20, fig.height=20}
+summary(Boston)
+pairs(Boston)
+
+```
+
+
+The crime rate seems to grow somewhat exponentially with the variable age, i.e. with the proportion of pre-WW2 housing:
+
+```{r}
+plot(crim~age, data=Boston)
+```
+
+Apparently, substantial criminal activity only happens where the property tax rate is ~6.7% :-)  
+[Downtown areas with common tax rate?]
+
+```{r}
+plot(crim~tax, data=Boston)
+```
+
+The nitric oxide concentration decreases with increasing distance to employment centres:
+
+```{r}
+plot(nox~dis, data=Boston)
+```
+
+And, not surprisingly, the median value of housing (medv) seems to increase with the mean number of rooms (rm).
+```{r}
+plot(medv~rm, data=Boston)
+```
+
+## 4: Standardisation, categorisation and training/testing subsets  
+
+As LDA assumes that variables are normally distributed and that variables have the same variance, standardising/scaling the data is often necessary, here with
+
+$scaled(x) = \displaystyle \frac{x-mean(x)}{sd(x)}$  
+
+
+As you can see from the summary below, the variables are now centered around 0 and have values that are of the same magnitude, and differences in their variation/distribution are comparable.
+
+```{r}
+boston_scaled <- as.data.frame(scale(Boston))
+summary(boston_scaled)
+```
+
+For example, the nitric oxide concentration ranged between 0.38 and 0.87 pp10m, while the property tax ranged between 187 and 711\$ per 10000\$, making direct comparisons about the distributions difficult, while the values now range between -1.5 and 2.7 and -1.3 and 1.8, respectively:
+
+```{r}
+summary(Boston[c(5, 10)])
+summary(boston_scaled[c(5, 10)])
+```
+
+
+### Converting *crim* to a categorical variable with four levels corresponding to the quantiles
+
+
+```{r}
+# extract quantiles
+quantiles <- quantile(boston_scaled$crim)
+# categorise crim variable according to quantiles, add to boston_scaled df
+boston_scaled$crime  <- cut(boston_scaled$crim, breaks = quantiles, include.lowest = TRUE, label = c("low", "med_low", "med_high", "high"))
+# remove continuous crim variable
+boston_scaled <- subset(boston_scaled, select=(-crim))
+# randomly assign testid to 80% of observations 
+set.seed(42)
+testid <- sample(nrow(boston_scaled),  size = nrow(boston_scaled) * 0.8)
+train <- boston_scaled[testid,]
+test <- boston_scaled[-testid,]
+```
+
+## 5: LDA
+
+An LDA is fitted to the train dataset with crime as the target variable and all others as predictors:
+
+```{r}
+lda.fit <- lda(crime ~ ., data = train)
+
+# function for lda biplot arrows //c/p from datacamp
+lda.arrows <- function(x, myscale = 1, arrow_heads = 0.1, color = "red", tex = 0.75, choices = c(1,2)){
+  heads <- coef(x)
+  arrows(x0 = 0, y0 = 0, 
+         x1 = myscale * heads[,choices[1]], 
+         y1 = myscale * heads[,choices[2]], col=color, length = arrow_heads)
+  text(myscale * heads[,choices], labels = row.names(heads), 
+       cex = tex, col=color, pos=3)
+}
+
+classes <- as.numeric(train$crime)
+plot(lda.fit, dimen = 2, col=classes, pch=classes)
+lda.arrows(lda.fit, myscale = 1.5)
+
+```
+
+To my understanding, the biplot shows that the LD1is to some extent able to separate/isolate a group of high and a few med_high observations for crime from the rest of the observations pretty well (cluster on the right), but has difficulties within the left cluster: there seems to be a trend of lower crime rate categories at lower LD1 scores, but in that dimension, the cluster is mainly overlap of categories. LD2 is able to further distinguish the left cluster (low at the upper, med_high at the lower 'subcluster'). However, the left-central cluster still includes a lot of low, med_low and med_high crime rates, so these two LDs still leave a large proportion of the observations 'unseparated' (lower three categories only). I hope next week's exercise will clarify the bi-plot concept a bit more for me. 
+The arrows indicate that the access to radial highways (\$rad) is the best discriminatory variable, followed by \$zn (something about parcel sizes), and nitric oxideconcentration (\$nox).
+
+
+The following two plots make the arrows easier to read ('zoom'/changed scale of the arrow lengths, some extend outside of plot):
+
+```{r}
+plot(lda.fit, dimen = 2, col="lightgrey", pch=classes)
+lda.arrows(lda.fit, myscale = 2)
+
+plot(lda.fit, dimen = 2, col="lightgrey", pch=classes)
+lda.arrows(lda.fit, myscale =6)
+```
+
+## 6: Predictions with LDA
+```{r}
+# save the correct classes from test data
+correct_classes <- test$crime
+
+# remove the crime variable from test data
+test <- subset(test, select=(-crime))
+
+# predict
+lda.pred <- predict(lda.fit, newdata = test)
+
+# results
+restab<- table(correct = correct_classes, predicted = lda.pred$class)
+restab
+```
+
+The model seems to predict the observations with high crime rate class pretty well, with just one test observation falsely predicted to be med_high instead of high, and one falsely predicted as high instead of med_high. However, the lower crime classes are not predicted as well; especially med_low was predicted for almost equal shares of low, med_low, and med_high classes in the test data. So, as far as I can see, the model is well-suited to predict areas of high crime rates, but cannot distinguish between lower rates particularly well.
+
+## 7: Distances and k-means
+
+
+First, read in dataset again, and scale variables (again to improve comprability, this time of distances)
+
+```{r}
+# re-read dataset, scale, convert to df
+data('Boston')
+b_scld <- as.data.frame(scale(Boston))
+```
+
+### Euclidian and Manhattan distances
+
+```{r}
+dist_eu <- dist(b_scld)
+dist_man <- dist(b_scld, method="manhattan")
+
+rbind(euclidian=summary(dist_eu), manhattan=summary(dist_man))
+
+```
+The main difference between the euclidian and Manhattan distances is one of scale, i.e. the Manhattan distances are generally 2-3.5 times larger. In addition, the relative distance between the centres (mean/median) and the minimum and maximum are also relatively larger. If these are used for optimisation, I would guess that the Manhattan distance would give more weight to extreme values/outliers in an optimisation procedure.
+
+
+### k-means clustering
+
+k-means clustering with 4 centres was applied to the Boston dataset:
+```{r}
+
+# k-means clustering with 4 centres
+km <- kmeans(Boston, centers = 4)
+
+kable(data.frame(cluster= c(1,2,3,4), crim=round(c(0.2537560, 12.2991617, 0.9497621, 0.1184122),2)), format="html", table.attr = "style='width:20%;'")  
+
+```
+
+For some reason, the summary of kmeans objects is deprecated in Rmarkdown, so the above table is  put together manually. It shows the cluster means of the crim variable according to the kmeans clustering with 4 clusters. This method as well seems to be able to separate one group/cluster (2) with high crime rates, while the others are very close to each other, especially compared to the magnitude of the mean of cluster 2.
+
+To determine the optimal number of clusters for kmeans, the clustering is run for 1:k clusters (k being a guess for an overestimate), and the k above which the total within-cluster sum of squares drops significantly is chosen. Here, the optimal number of clusters is 2, as the plot of total within-cluster sum of squares below shows:
+
+```{r}
+
+set.seed(42)
+
+# determine the number of clusters
+k_max <- 10
+
+# calculate the total within sum of squares
+twcss <- sapply(1:k_max, function(k){kmeans(Boston, k)$tot.withinss})
+
+# plot 
+qplot(x = 1:k_max, y = twcss, geom = 'line')
+```
+
+Running kmeans again with k=2, pairwise scatterplots of all variable combinations (black = cluster 1, red = cluster 2):
+
+```{r fig.width=20, fig.height=20}
+
+# k-means clustering
+km <-kmeans(Boston, centers = 2)
+
+# plot the Boston dataset with clusters
+pairs(Boston, col = km$cluster)
+
+```
+Again, I won't go through all of the variable combinations, but look at the ones I had a glimpse at in the very beginning, and the one that seemed to influence the LDA clustering most.
+ 
+
+While the age of housing seems to be largely omitted by the k-menas clustering, crime rates have apparently affected the clustering heavily; no observations with a crime rate higher than 4 were allocated to in the first cluster (referenced as low-crime cluster from here on), and very few observations in the second cluster have low crime rate values:
+```{r}
+plot(crim~age, data=Boston, col = km$cluster)
+max(Boston$crim[km$cluster==1])
+```
+
+Apparently, I am not alone with the interpretation that substantial criminal activity only happens where the property tax rate is ~6.7%:
+
+
+```{r}
+plot(crim~tax, data=Boston, col = km$cluster)
+```
+
+Both nitric oxide concentration and distance to employment centres have a somewhat overlapping 'edge' between clusters, and have their cluster separation at one end of the range (high crime cluster at hig nox concentrations and low distance to emlyment centres). Note, however, the low-crimwe cluster observations at the highest nox concetrations.
+
+```{r}
+plot(nox~dis, data=Boston, col = km$cluster)
+```
+
+Very few observations with high value of housing are allocated to the high-crime cluster; room count does not seem to have infleunced clustering significantly:
+```{r}
+plot(medv~rm, data=Boston, col = km$cluster)
+```
+
+
+Access to radial highways (highest impact in LDA clustering above) is also very clearly separated by the 2-fold kmeans-clustering:
+
+```{r}
+plot(rad~crim, data=Boston, col = km$cluster)
+```
+
+All in all, the 2-fold k-means clustering seems to work very well for some variables in the data, as did the LDA in predicting  the highest crime rate observations. One should have a good look at autocorrelation before drawing conclusions, though.
+
+
+
