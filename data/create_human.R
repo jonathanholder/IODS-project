@@ -1,3 +1,8 @@
+# preparing data for next week's analysis
+# gender inequality and human development indices
+# jonathan holder
+# 2020-11-19
+
 # 1 ok
 # 2: reading data
 
