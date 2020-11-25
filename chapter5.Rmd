@@ -1,0 +1,100 @@
+# Exercise 5: Dimensionality reduction
+
+```{r, message=F}
+library(MASS)
+library(tidyverse)
+library(ggplot2)
+library(corrplot)
+library(knitr)
+library(GGally)
+library(FactoMineR)
+
+```
+
+(The data wrangling script can be found here: [part 1](https://github.com/jonathanholder/IODS-project/blob/master/data/create_human.R), 
+[part 2](https://github.com/jonathanholder/IODS-project/blob/master/data/create_human2.R))
+
+## 1: Data overview
+
+The dataset consists of 155 observations (countries) with 8 variables (all numerical) on social and health, and gender relation indicators (for further information, see data wrangling scripts and [metadata](http://hdr.undp.org/en/content/human-development-index-hdi))
+
+
+```{r fig.width=12, fig.height=12}
+human <- read.csv("data/human2.csv", row.names = 1)
+dim(human)
+summary(human)
+head(human)
+pairs(human)
+corrplot(cor(human), type="upper")
+
+```
+Again, I won't go through all variable combinations, but comment on a few interesting ones:
+
+* high maternal mortality seems to be limited to countries with low GNI
+* bot adolescent births and maternal mortality are negatively correlated with the ratio of females in secondary education, expected time of education, and life expectancy
+* the three latter variables are positively correlated with wealth (GNI)
+* unsurprisingly, there is a high positive correlation between adolescent births and maternal mortality 
+
+
+## 2: PCA, raw data
+Here's a PCA of the (unscaled) dataset:
+```{r fig.width=12, fig.height=12}
+
+pca_human <- prcomp(human)
+psum <- summary(pca_human)
+# Variability captured by PC (rounded to full %):
+round(100*psum$importance[2, ], digits = 1)
+biplot(pca_human, choices = 1:2, col=c("steelblue", "darkred"))
+```
+This PCA yields basically just one principal component explaining all the variance the PCA is able to explain, which coincides with GNI. This is not very surprising, as GNI is the variable with by far the highest variance in absolute terms from about 600 to 120,000 (second biggest range: 1:1100; see summary of the data above). As the PCA uses these absolute values/the variance they entail and maximises it, the role of GNI compared to other variables is exaggerated. All other PCs only explain very marginal variances (see variabilty capture table above), and all other variables are not considered in the PCA; this is also supported by the warning messages R prints when plotting the arrows corresponding to the variable: they are too short to even have a direction (=0).
+
+## 3+4: PCA, scaled data
+
+So, as mentioned in the Datacamp exercise, it is probably a good idea to standardise the data and run the PCA again:
+
+```{r fig.width=12, fig.height=12, fig.cap="Biplot of a PCA using standardised values of gender inequality factors. Contrary to the non-standardised PCA, variables other than GNI are considered in the PCA. [Caption: check, but what's the difference to standard text?]"}
+
+pca_human2 <- prcomp(scale(human))
+summary(scale(human))
+summary(pca_human2)
+sum <- summary(pca_human2)
+# Variability captured by PC (rounded to full %):
+round(100*sum$importance[2, ], digits = 1)
+
+biplot(pca_human2, choices = 1:2, col=c("steelblue", "darkred"), main = "Biplot: Gender inequality: PCA using standardised values")
+```
+
+Standardising (all variables now in comparable orders of magnitudes, see summary above) the data does make things a lot more detailed: there is more than one PC that explains substantial proportions of variance (see importance table above). For PC1, the decisive variables can be grouped into two (diametral) variable groups: maternal mortality and adolescent births versus expected time of education, life expectancy, GNI, and the ratio of females with secondary education. For PC2, the decisive factors are the ratio of females in the labour force and their representation in parlament. 
+
+## 5. MCA: tea
+```{r fig.width=12, fig.height=12}
+data(tea)
+dim(tea)
+str(tea)
+gather(tea) %>% ggplot(aes(value)) + facet_wrap("key", scales = "free") + geom_bar() + theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+
+```
+The *tea* dataset is based on a survey on tea drinking habits and product perception with 36 queestions, including some background information, with 300 respondents/observations. The answers are (frankly, horribly) enshrined in the factor levels (all variables but respondend age are factorial). The questions are not specified in the package metadata, but have to be extrapolated from the variable names, leaving ample room for (mis-) interpretation.
+
+As I have enough trouble interpreting the MCA outputs as it is, I'll reduce the number of variables considerably for the MCA.
+
+
+
+
+```{r fig.width=8, fig.height=8}
+keep_columns <- c("Tea", "sugar", "pub", "sex", "feminine")
+tea2 <- dplyr::select(tea, one_of(keep_columns))
+
+t.mca <- MCA(tea2, graph=F)
+plot.MCA(t.mca, invisible=c("ind"), select="1")
+
+
+```
+
+
+From the MCA variable biplot/factor map, I would conclude that Earl Grey is more often drunk with sugar than are green and other black teas, as the corresponding locations in the biplot are closer to each other. Males tend to see tea as not feminine, while females see it as feminine more often (again, shorter distances); in addition, females seem to drink tea in pubs more often than males do. Individuals drinking black and green tea are very similar in other aspects, but rather different from those inclined to Earl Grey.
+
+Dimension 1 is mostly influenced by sex (and *feminine*, whatever that exactly means), while dimension 2 is linked to the sugar/Earl Grey vs black & green / no sugar dichotomy. The difference between pub / no pub is equally depicted in both dimensions. 
+
+
+
