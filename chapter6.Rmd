@@ -1,0 +1,217 @@
+# Exercise 6: Longitudinal data
+
+```{r, message=F}
+library(MASS)
+library(tidyverse)
+library(ggplot2)
+library(corrplot)
+library(knitr)
+library(GGally)
+library(FactoMineR)
+library(lme4)
+library(gridExtra)
+library(lemon)
+```
+
+The data wrangling script can be found [here](https://github.com/jonathanholder/IODS-project/blob/master/data/meet_and_repeat.R), including some notes on the data format.
+
+Read data, factorise again (gets lost in I/O):
+```{r}
+rats.l <- read.csv("data/rats.l.csv")
+bp.l <- read.csv("data/bprs.l.csv")
+# factorise again, has been lost in re-reading
+rats.l$ID <- as.factor(rats.l$ID)
+rats.l$Group <- as.factor(rats.l$Group)
+
+bp.l$treatment <- as.factor(bp.l$treatment)
+bp.l$subject <- as.factor(bp.l$subject)
+
+
+```
+
+# 1: RATS
+
+## Visualising individual data
+```{r fig.width=8, fig.height=4}
+head(rats.l)
+
+# plot original weights, col = ID, facet = group
+ggplot(rats.l, aes(x = time, y = weight, col = ID)) +
+  geom_line()+
+  facet_grid(. ~ Group) 
+```
+
+In the above plot, it becomes clear that the weight of the individual rats differ clearly between group 1 and groups 2 and 3. The rats in group 1 have considerably lower starting weights, and it looks like their weight is rather constant during the study period compared to the other groups. both group 2 and 3 show a clear trend in weight increase. The variance in group 2 is comparatively high, owing to the high starting weight of individual 12. The weight of rats seems to be higher in group 3 than in group 2 (leaving aside individual 12).
+
+
+One way to examine the development of the variable of interest over time is to look at the tracking effect by standardising the data, i.e. to check if the differences between the individual weight developments / final weights is merely an effect of different starting values (weights).
+
+
+```{r fig.width=8, fig.height=4}
+
+rats.l <- rats.l %>%
+  group_by(time) %>%
+  mutate(stdval = (weight - mean(weight))/sd(weight) ) %>%
+  ungroup()
+
+ggplot(rats.l, aes(x = time, y = stdval, col = ID)) +
+  geom_line()+
+  facet_grid(. ~ Group) 
+```
+
+The above plot suggests that indeed the starting weight is of major importance for the weight development.
+
+# Summary measures
+
+In the case of the rats dataset with just 16 individuals, plotting each subject individually is still interpretable, but larger datasets often require summary measures, e.g. the mean and its standard error of the individuals at each time step, so here's a plot of the group means and the corresponding standard errors (as error bars): 
+```{r fig.width=8, fig.height=4}
+
+rats.sum <- rats.l %>%
+  group_by(Group, time) %>%
+  summarise( mean = mean(weight), se = sd(weight)/sqrt(length(unique(rats.l$time)))) %>%
+  ungroup()
+
+
+ggplot(rats.sum, aes(x = time, y = mean, linetype = Group, shape = Group, col=Group)) +
+  geom_line() +
+  geom_errorbar(aes(ymin=mean-se, ymax=mean+se, linetype="1"), width=0.3) +
+  scale_y_continuous(name = "mean(weight) +/- se(weight)")
+```
+
+The mean weights at the start of the study clearly differ between the groups; there is less difference between the weight increment over time between groups, but group 1 still seems to gain about half as much weight in absolute terms as groups 2 and 3 (though the relative weight increment over time could be similar). Note the larger standard error of group 2 (can largely be ascribed to the heavy individual 12).
+
+A box plot of the group means (averaged over all points in time but the first) leads to similar conclusions: relatively high variance in group 2 (again: note the 'oulier' corresponding to ID 12), and considerably lower weight for group 1 individuals.
+```{r fig.width=8, fig.height=4}
+
+rats.sum2 <- rats.l %>%
+  filter(time > 0) %>%
+  group_by(Group, ID) %>%
+  summarise( mean=mean(weight) ) %>%
+  ungroup()
+
+
+ggplot(rats.sum2, aes(x = Group, y = mean)) +
+  geom_boxplot() +
+  stat_summary(fun.y = "mean", geom = "point", shape=23, size=4, fill = "white") +
+  scale_y_continuous(name = "mean(weight), time(8:64)")
+
+
+```
+
+# T-tests & ANOVA
+One option to check if the groups (however they have been treated) are significantly different from one another is a two-sample t-test (here applied to all three group combinations):
+
+```{r fig.width=8, fig.height=4}
+
+t.test(mean ~ Group, data = rats.sum2[rats.sum2$Group%in%c(1,2),], var.equal = TRUE)
+t.test(mean ~ Group, data = rats.sum2[rats.sum2$Group%in%c(1,3),], var.equal = TRUE)
+t.test(mean ~ Group, data = rats.sum2[rats.sum2$Group%in%c(2,3),], var.equal = TRUE)
+
+```
+As expected suggest the outputs that group 1 is significantly different from both group 2 and group 3, but groups 2 and 3 are not significantly different from each other. This is probably an effect of the heavy individual in group 2 (ID=12) which impacts the group 2 variance, which covers the whole variance of group 3. I wouldn't be comfortable to consider ID12 an outlier, let alone excluding it from the analysis, as the group only consists of 4 individuals, and the weight gain seems reasonable compared to others - it just seems to be a heavy fellow from the beginning on, judging from the available data (time span).
+
+Below you find an ANOVA of a linear model including both group and the starting weight (retrieved from the original dataset in wide format):
+```{r fig.width=8, fig.height=4}
+rats <- read.table("https://raw.githubusercontent.com/KimmoVehkalahti/MABS/master/Examples/data/rats.txt", header=T)
+rats.sum2$startw <-  rats$WD1
+anova(lm(mean~startw+Group, data=rats.sum2))
+```
+-- the weight at the start of the measurement period explains considerably more variance than the group treatments (though the differences between groups are not further divided here...)
+
+
+# 2: BPRS
+
+## Plotting measured data
+
+Plotting the bprs values over time for each individual separately:
+
+```{r fig.width=8, fig.height=8}
+
+ggplot(bp.l, aes(x = week, y = bprs, col = subject, lty = treatment)) +
+  geom_line()+
+  # scale_x_continuous(name = "Time (days)", breaks = seq(0, 60, 10))+
+  # scale_y_continuous(name = "Weight (grams)")+
+   theme(legend.position = "bottom")
+```
+
+-- as mentioned before, just plotting the dynamics of a variable per individual can be confusing with larger datasets (and ones with high temporal fluctuations). It looks like the bprs score decreases for most individuals over time, but there's not much more to be easily read from this plot.
+
+## Regression model
+
+A simple regression model with bprs as a function of time (week) and treatment suggests that time has a significant (negative) effect on the bprs score, while treatment does not have a significant impact:
+
+
+```{r fig.width=8, fig.height=4}
+
+bp_reg <- lm(bprs~week + treatment, data=bp.l)
+summary(bp_reg)
+
+```
+
+
+## Random intercept models
+
+A similar model to the one above, but one that considers different intercepts for each subject may be helpful here, as it consideres the different 'starting values' of the bprs score of individuals between treatments.
+
+```{r fig.width=8, fig.height=4}
+# random intercept model
+bp_ref <- lmer(bprs ~ week + treatment + (1 | subject), data = bp.l, REML = FALSE)
+
+# Print the summary of the model
+summary(bp_ref)
+
+
+```
+
+The random intercept model above, where subject has been included as a random effect, suggests that a substantial part of the variance in the intercept can be ascribed to the subjects.
+
+Now let's add week, i.e. the slope of the regression, as a random effect, considering both the intercept and the slope of individuals:
+```{r fig.width=8, fig.height=4}
+bp_ref2 <- lmer(bprs ~ week + treatment + (week | subject), data = bp.l, REML = FALSE)
+summary(bp_ref2)
+anova(bp_ref, bp_ref2)
+
+```
+As the anova suggests, the random intercept and random slope model explains significantly more variance than the model with only random intercept.
+
+## Random intercept model with interaction
+
+As a last step, let's include an interaction between treatment and time (probably the main interest of this study):
+
+
+```{r fig.width=8, fig.height=4}
+bp_ref3 <- lmer(bprs ~ week * treatment + (week | subject), data = bp.l, REML = FALSE)
+summary(bp_ref3)
+anova(bp_ref2, bp_ref3)
+```
+
+The model performs with the interaction performs slightly better, but, according to the Chi Square test, this improvement is not significant.
+
+So here's again the initial plot of all bprs scores of individuals over time and plots of the the predictions of the two latest models (lme with and without interaction between week and treatment):
+
+```{r fig.width=14, fig.height=8}
+p_base <- ggplot(bp.l, aes(x = week, y = bprs, col = subject, lty = treatment)) +
+  geom_line()+
+  ggtitle("measured values")+
+   theme(legend.position = "bottom")
+
+# add fitted values
+bp.l$fitted2 <- fitted(bp_ref2)# model without intetraction
+bp.l$fitted3 <- fitted(bp_ref3)# model with interaction
+
+# plot predictions
+p_m2 <- ggplot(bp.l, aes(x = week, y = fitted2, col = subject, lty = treatment)) +
+  geom_line()+
+  theme(legend.position = "bottom")+
+  ggtitle("Predictions: lme without interaction")
+p_m3 <- ggplot(bp.l, aes(x = week, y = fitted3, col = subject, lty = treatment)) +
+  geom_line()+
+  theme(legend.position = "bottom")+
+  ggtitle("Predictions: lme with interaction (week/treatm)")
+grid_arrange_shared_legend(p_base, p_m2, p_m3, nrow=1)
+
+```
+The models predict an overall decreasing trend of the bprs scores, differentiating both slope (speed of change) and intercept ('starting score') between individuals. Note that the effect of including the interaction between week and treatment leads to slight differences in the predictions for an individual between treatments over time (slope) compared to the model without interactions, as well as slight differences in intercepts.
+
+
+
